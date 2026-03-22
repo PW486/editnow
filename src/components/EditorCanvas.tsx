@@ -56,6 +56,12 @@ interface MarqueeSelectionState {
   additive: boolean;
 }
 
+interface RulerMark {
+  coordinate: number;
+  position: number;
+  major: boolean;
+}
+
 const SNAP_THRESHOLD = 8;
 const RULER_SIZE = 24;
 
@@ -478,21 +484,74 @@ const EditorCanvas = ({
   const boardTop = Math.max(RULER_SIZE, Math.round((workspaceHeight - boardHeight) / 2));
   const canvasOrigin = { x: boardLeft + RULER_SIZE, y: boardTop + RULER_SIZE };
 
-  const horizontalRulerMarks = useMemo(() => {
-    const marks: number[] = [];
-    for (let value = 0; value <= workspaceWidth - RULER_SIZE; value += 50) {
-      marks.push(value);
-    }
-    return marks;
-  }, [workspaceWidth]);
+  const rulerStep = useMemo(() => {
+    const targetPixels = 64;
+    const rawStep = targetPixels / viewTransform.scale;
+    const options = [10, 20, 25, 50, 100, 200, 250, 500, 1000];
+    return options.find((option) => option >= rawStep) ?? 1000;
+  }, [viewTransform.scale]);
 
-  const verticalRulerMarks = useMemo(() => {
-    const marks: number[] = [];
-    for (let value = 0; value <= workspaceHeight - RULER_SIZE; value += 50) {
-      marks.push(value);
+  const horizontalRulerMarks = useMemo<RulerMark[]>(() => {
+    const marks: RulerMark[] = [];
+    const visibleStart = (-canvasOrigin.x - viewTransform.position.x) / viewTransform.scale;
+    const visibleEnd = (workspaceWidth - canvasOrigin.x - viewTransform.position.x) / viewTransform.scale;
+    const first = Math.floor(visibleStart / rulerStep) * rulerStep;
+    const majorStep = rulerStep * 2;
+
+    for (let coordinate = first; coordinate <= visibleEnd + rulerStep; coordinate += rulerStep) {
+      const position = canvasOrigin.x + viewTransform.position.x + coordinate * viewTransform.scale;
+      if (position < RULER_SIZE - 1 || position > workspaceWidth) {
+        continue;
+      }
+      marks.push({
+        coordinate,
+        position: position - RULER_SIZE,
+        major: coordinate % majorStep === 0,
+      });
     }
+
     return marks;
-  }, [workspaceHeight]);
+  }, [canvasOrigin.x, rulerStep, viewTransform.position.x, viewTransform.scale, workspaceWidth]);
+
+  const verticalRulerMarks = useMemo<RulerMark[]>(() => {
+    const marks: RulerMark[] = [];
+    const visibleStart = (-canvasOrigin.y - viewTransform.position.y) / viewTransform.scale;
+    const visibleEnd = (workspaceHeight - canvasOrigin.y - viewTransform.position.y) / viewTransform.scale;
+    const first = Math.floor(visibleStart / rulerStep) * rulerStep;
+    const majorStep = rulerStep * 2;
+
+    for (let coordinate = first; coordinate <= visibleEnd + rulerStep; coordinate += rulerStep) {
+      const position = canvasOrigin.y + viewTransform.position.y + coordinate * viewTransform.scale;
+      if (position < RULER_SIZE - 1 || position > workspaceHeight) {
+        continue;
+      }
+      marks.push({
+        coordinate,
+        position: position - RULER_SIZE,
+        major: coordinate % majorStep === 0,
+      });
+    }
+
+    return marks;
+  }, [canvasOrigin.y, rulerStep, viewTransform.position.y, viewTransform.scale, workspaceHeight]);
+
+  const horizontalCanvasBand = useMemo(() => {
+    const start = canvasOrigin.x + viewTransform.position.x - RULER_SIZE;
+    const end = start + canvasSize.width * viewTransform.scale;
+    return {
+      left: Math.max(0, start),
+      width: Math.max(0, Math.min(workspaceWidth - RULER_SIZE, end) - Math.max(0, start)),
+    };
+  }, [canvasOrigin.x, canvasSize.width, viewTransform.position.x, viewTransform.scale, workspaceWidth]);
+
+  const verticalCanvasBand = useMemo(() => {
+    const start = canvasOrigin.y + viewTransform.position.y - RULER_SIZE;
+    const end = start + canvasSize.height * viewTransform.scale;
+    return {
+      top: Math.max(0, start),
+      height: Math.max(0, Math.min(workspaceHeight - RULER_SIZE, end) - Math.max(0, start)),
+    };
+  }, [canvasOrigin.y, canvasSize.height, viewTransform.position.y, viewTransform.scale, workspaceHeight]);
 
   const canvasSurfaceStyle = useMemo<CSSProperties>(() => ({
     transform: `translate(${viewTransform.position.x}px, ${viewTransform.position.y}px) scale(${viewTransform.scale})`,
@@ -652,27 +711,43 @@ const EditorCanvas = ({
         <div className="absolute left-0 top-0 z-20 flex h-6 w-6 items-center justify-center border border-gray-700 bg-gray-900 text-[10px] text-gray-500">
           0
         </div>
-        <div className="absolute left-6 top-0 z-20 h-6 border border-gray-700 bg-gray-900" style={{ width: workspaceWidth - RULER_SIZE }}>
+        <div className="absolute left-6 top-0 z-20 h-6 overflow-hidden border border-gray-700 bg-gray-900" style={{ width: workspaceWidth - RULER_SIZE }}>
+          {horizontalCanvasBand.width > 0 && (
+            <div
+              className="absolute inset-y-0 border-x border-blue-500/30 bg-blue-500/10"
+              style={{ left: horizontalCanvasBand.left, width: horizontalCanvasBand.width }}
+            ></div>
+          )}
           {horizontalRulerMarks.map((mark) => (
             <div
-              key={`hr-${mark}`}
+              key={`hr-${mark.coordinate}`}
               className="absolute top-0 h-full"
-              style={{ left: mark }}
+              style={{ left: mark.position }}
             >
-              <div className={`w-px bg-gray-500 ${mark % 100 === 0 ? 'h-4' : 'h-2'}`}></div>
-              <span className="absolute left-1 top-1 text-[9px] text-gray-500">{mark}</span>
+              <div className={`w-px ${mark.major ? 'h-4 bg-gray-400' : 'h-2 bg-gray-500'}`}></div>
+              {mark.major && (
+                <span className="absolute left-1 top-1 text-[9px] text-gray-400">{mark.coordinate}</span>
+              )}
             </div>
           ))}
         </div>
-        <div className="absolute left-0 top-6 z-20 w-6 border border-gray-700 bg-gray-900" style={{ height: workspaceHeight - RULER_SIZE }}>
+        <div className="absolute left-0 top-6 z-20 w-6 overflow-hidden border border-gray-700 bg-gray-900" style={{ height: workspaceHeight - RULER_SIZE }}>
+          {verticalCanvasBand.height > 0 && (
+            <div
+              className="absolute inset-x-0 border-y border-blue-500/30 bg-blue-500/10"
+              style={{ top: verticalCanvasBand.top, height: verticalCanvasBand.height }}
+            ></div>
+          )}
           {verticalRulerMarks.map((mark) => (
             <div
-              key={`vr-${mark}`}
+              key={`vr-${mark.coordinate}`}
               className="absolute left-0 w-full"
-              style={{ top: mark }}
+              style={{ top: mark.position }}
             >
-              <div className={`h-px bg-gray-500 ${mark % 100 === 0 ? 'w-4' : 'w-2'}`}></div>
-              <span className="absolute left-1 top-1 text-[9px] text-gray-500 [writing-mode:vertical-rl]">{mark}</span>
+              <div className={`h-px ${mark.major ? 'w-4 bg-gray-400' : 'w-2 bg-gray-500'}`}></div>
+              {mark.major && (
+                <span className="absolute left-1 top-1 text-[9px] text-gray-400 [writing-mode:vertical-rl]">{mark.coordinate}</span>
+              )}
             </div>
           ))}
         </div>
