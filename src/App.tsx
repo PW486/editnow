@@ -60,7 +60,6 @@ const App: React.FC = () => {
   const [exportBackgroundMode, setExportBackgroundMode] = useState<'current' | 'transparent' | 'solid'>('current');
   const [exportBackgroundColor, setExportBackgroundColor] = useState('#ffffff');
   const [exportFileName, setExportFileName] = useState('editnow-export');
-  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saved' | 'restored'>('idle');
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
 
@@ -174,7 +173,6 @@ const App: React.FC = () => {
         setHistoryStep(0);
         historyStepRef.current = 0;
         replaceVisibleLayers(project.layers);
-        setAutosaveStatus('restored');
       } catch (error) {
         console.error(error);
       }
@@ -185,15 +183,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      const project = serializeProject({
-        canvasSize,
-        bgColor,
-        isTransparent,
-        layers: serializeLayers(layers),
-      });
-      window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(project));
-      setAutosaveStatus('saved');
-    }, 400);
+      try {
+        const project = serializeProject({
+          canvasSize,
+          bgColor,
+          isTransparent,
+          layers: serializeLayers(layers),
+        });
+        window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(project));
+      } catch (error) {
+        console.error(error);
+      }
+    }, 1000);
 
     return () => window.clearTimeout(timeout);
   }, [bgColor, canvasSize, isTransparent, layers]);
@@ -908,7 +909,6 @@ const App: React.FC = () => {
       historyStepRef.current = 0;
       replaceVisibleLayers(project.layers);
       window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(parsed));
-      setAutosaveStatus('saved');
     } catch (error) {
       console.error(error);
       window.alert('Failed to open project file.');
@@ -946,18 +946,34 @@ const App: React.FC = () => {
   };
 
   const fitCanvasToViewport = () => {
-    const availableWidth = Math.max(window.innerWidth - 64 - 288 - 96, 320);
-    const availableHeight = Math.max(window.innerHeight - 120, 240);
-    const scale = Math.max(
-      0.25,
-      Math.min(4, Math.min(availableWidth / canvasSize.width, availableHeight / canvasSize.height)),
+    // Dynamically calculate available space based on the workspace container
+    const workspaceElement = document.querySelector('.flex-1.min-h-0.overflow-hidden.bg-gray-900\\/50');
+    if (!workspaceElement) return;
+
+    const { clientWidth, clientHeight } = workspaceElement;
+    
+    // Add some padding
+    const padding = 40;
+    const availableWidth = Math.max(clientWidth - padding * 2, 320);
+    const availableHeight = Math.max(clientHeight - padding * 2, 240);
+
+    const scale = Math.min(
+      4, // Max scale cap
+      Math.min(availableWidth / canvasSize.width, availableHeight / canvasSize.height)
     );
 
+    // Ensure a minimum reasonable scale so it doesn't disappear
+    const finalScale = Math.max(0.1, scale);
+
+    // EditorCanvas centers the "board" (ruler + canvas) internally.
+    // To perfectly center the scaled canvas, we need to offset the position
+    // to account for the scale and the ruler's presence.
+    // RULER_SIZE is 24px.
     setViewTransform({
-      scale,
+      scale: finalScale,
       position: {
-        x: Math.round((availableWidth - canvasSize.width * scale) / 2),
-        y: Math.round((availableHeight - canvasSize.height * scale) / 2),
+        x: Math.round((canvasSize.width - canvasSize.width * finalScale) / 2 - 12),
+        y: Math.round((canvasSize.height - canvasSize.height * finalScale) / 2 - 12),
       },
     });
   };
@@ -965,7 +981,7 @@ const App: React.FC = () => {
   const resetViewTransform = () => {
     setViewTransform({
       scale: 1,
-      position: { x: 0, y: 0 },
+      position: { x: -12, y: -12 },
     });
   };
 
@@ -1379,34 +1395,9 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col relative bg-gray-950">
         <div className="min-h-14 bg-gray-800 border-b border-gray-700 flex flex-wrap items-center px-4 py-2 gap-3">
-            <h1 className="font-bold text-xl bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mr-2">
+            <h1 className="font-bold text-xl bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mr-1">
               Edit Now
             </h1>
-
-            <div className="flex h-9 items-center rounded-md border border-gray-700 bg-gray-900 px-3">
-              {selectedLayerSummary ? (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="rounded bg-blue-500/15 px-2 py-1 font-semibold text-blue-200">
-                    {selectedLayerSummary.type}
-                  </span>
-                  <span className="max-w-40 truncate text-gray-200">{selectedLayerSummary.name}</span>
-                  <span className="text-gray-500">•</span>
-                  <span className="text-gray-400">{selectedLayerSummary.detail}</span>
-                  {selectedLayerSummary.context && (
-                    <>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-cyan-300">{selectedLayerSummary.context}</span>
-                    </>
-                  )}
-                  {selectedIds.length === 1 && selectedLayer?.locked && <span className="text-amber-300">Locked</span>}
-                  {selectedIds.length === 1 && selectedLayer && !selectedLayer.visible && <span className="text-rose-300">Hidden</span>}
-                </div>
-              ) : (
-                <span className="text-xs text-gray-400">
-                  No selection
-                </span>
-              )}
-            </div>
 
             <div className="flex h-9 items-center gap-1 bg-gray-900 rounded-md border border-gray-700 px-1">
               <button
@@ -1444,38 +1435,20 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            <button
-              onClick={() => setShowShortcutHelp((current) => !current)}
-              className={`flex h-9 items-center gap-2 rounded-md border px-3 text-xs transition-colors ${showShortcutHelp ? 'border-blue-500/60 bg-blue-500/15 text-blue-100' : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'}`}
-              title="Shortcut help (?)"
-            >
-              <Keyboard className="h-4 w-4" />
-              Shortcuts
-            </button>
-
-            <button
-              onClick={() => setShowHistoryPanel((current) => !current)}
-              className={`flex h-9 items-center gap-2 rounded-md border px-3 text-xs transition-colors ${showHistoryPanel ? 'border-blue-500/60 bg-blue-500/15 text-blue-100' : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'}`}
-              title="History"
-            >
-              <RotateCcw className="h-4 w-4" />
-              History
-            </button>
-
-            <div className="flex h-9 items-center gap-2 bg-gray-900 px-3 rounded-md border border-gray-700">
+            <div className="flex h-9 items-center gap-1 bg-gray-900 px-2 rounded-md border border-gray-700">
               <span className="text-xs text-gray-400">W:</span>
               <input
                 type="number"
                 value={canvasSize.width}
                 onChange={(event) => setCanvasSize({ ...canvasSize, width: Number(event.target.value) })}
-                className="h-7 w-16 bg-transparent text-sm outline-none text-center"
+                className="h-7 w-12 bg-transparent text-xs outline-none text-center"
               />
               <span className="text-xs text-gray-400 border-l border-gray-700 pl-2">H:</span>
               <input
                 type="number"
                 value={canvasSize.height}
                 onChange={(event) => setCanvasSize({ ...canvasSize, height: Number(event.target.value) })}
-                className="h-7 w-16 bg-transparent text-sm outline-none text-center"
+                className="h-7 w-12 bg-transparent text-xs outline-none text-center"
               />
             </div>
 
@@ -1483,27 +1456,34 @@ const App: React.FC = () => {
               <span className="text-xs text-gray-400">Background</span>
               <div className="flex h-7 items-center gap-1 rounded-md bg-gray-950 px-1">
                 <button
-                  onClick={() => setIsTransparent(false)}
-                  className={`h-5 px-2 text-xs rounded ${!isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                  title="Solid background"
-                >
-                  Solid
-                </button>
-                <button
                   onClick={() => setIsTransparent(true)}
-                  className={`h-5 px-2 text-xs rounded ${isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  className={`h-5 px-2 text-xs rounded transition-colors ${isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
                   title="Transparent background"
                 >
                   Transparent
                 </button>
+                <button
+                  onClick={() => setIsTransparent(false)}
+                  className={`h-5 px-2 text-xs rounded transition-colors ${!isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  title="Solid background"
+                >
+                  Solid
+                </button>
               </div>
               {!isTransparent && (
-                <input
-                  type="color"
-                  value={bgColor}
-                  onChange={(event) => setBgColor(event.target.value)}
-                  className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                />
+                <div className="relative flex items-center justify-center group">
+                  <div
+                    className="w-5 h-5 rounded-full border border-gray-600 shadow-sm transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: bgColor }}
+                  />
+                  <input
+                    type="color"
+                    value={bgColor}
+                    onChange={(event) => setBgColor(event.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    title="Change background color"
+                  />
+                </div>
               )}
             </div>
 
@@ -1517,14 +1497,14 @@ const App: React.FC = () => {
               </button>
               <button
                 onClick={fitCanvasToViewport}
-                className="h-7 min-w-12 px-2 text-xs text-gray-300 hover:bg-gray-700 rounded"
+                className="h-7 min-w-10 px-1 text-xs text-gray-300 hover:bg-gray-700 rounded"
                 title="Fit canvas to viewport (0)"
               >
                 Fit
               </button>
               <button
                 onClick={resetViewTransform}
-                className="h-7 min-w-14 px-2 text-xs text-gray-300 hover:bg-gray-700 rounded"
+                className="h-7 min-w-12 px-1 text-xs text-gray-300 hover:bg-gray-700 rounded"
                 title="Actual size 100% (1)"
               >
                 {Math.round(viewTransform.scale * 100)}%
@@ -1538,57 +1518,23 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex h-9 items-center gap-2 rounded-md border border-gray-700 bg-gray-900 px-3">
-              <span className="text-xs text-gray-400">Export</span>
-              <input
-                type="text"
-                value={exportFileName}
-                onChange={(event) => setExportFileName(event.target.value)}
-                className="h-7 w-28 rounded bg-transparent px-2 text-xs text-gray-200 outline-none border border-gray-700"
-                placeholder="filename"
-              />
-              <select
-                value={exportFormat}
-                onChange={(event) => setExportFormat(event.target.value as 'png' | 'jpeg')}
-                className="h-7 rounded bg-transparent px-1 text-xs text-gray-200 outline-none"
-              >
-                <option value="png">PNG</option>
-                <option value="jpeg">JPG</option>
-              </select>
-              <select
-                value={exportScale}
-                onChange={(event) => setExportScale(Number(event.target.value))}
-                className="h-7 rounded bg-transparent px-1 text-xs text-gray-200 outline-none"
-              >
-                <option value="1">1x</option>
-                <option value="2">2x</option>
-                <option value="3">3x</option>
-                <option value="4">4x</option>
-              </select>
-              <select
-                value={exportBackgroundMode}
-                onChange={(event) => setExportBackgroundMode(event.target.value as 'current' | 'transparent' | 'solid')}
-                className="h-7 rounded bg-transparent px-1 text-xs text-gray-200 outline-none"
-              >
-                <option value="current">Current BG</option>
-                <option value="transparent">Transparent</option>
-                <option value="solid">Solid BG</option>
-              </select>
-              {exportBackgroundMode === 'solid' && (
-                <input
-                  type="color"
-                  value={exportBackgroundColor}
-                  onChange={(event) => setExportBackgroundColor(event.target.value)}
-                  className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                />
-              )}
-              <button
-                onClick={handleExport}
-                className="flex h-7 items-center gap-2 rounded bg-blue-600 px-3 text-xs font-medium text-white transition-colors hover:bg-blue-700 shadow-lg shadow-blue-900/20"
-              >
-                <Download className="h-3.5 w-3.5" /> Export
-              </button>
-            </div>
+            <button
+              onClick={() => setShowHistoryPanel((current) => !current)}
+              className={`flex h-9 items-center gap-2 rounded-md border px-3 text-xs transition-colors ${showHistoryPanel ? 'border-blue-500/60 bg-blue-500/15 text-blue-100' : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'}`}
+              title="History"
+            >
+              <RotateCcw className="h-4 w-4" />
+              History
+            </button>
+
+            <button
+              onClick={() => setShowShortcutHelp((current) => !current)}
+              className={`flex h-9 items-center gap-2 rounded-md border px-3 text-xs transition-colors ${showShortcutHelp ? 'border-blue-500/60 bg-blue-500/15 text-blue-100' : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'}`}
+              title="Shortcut help (?)"
+            >
+              <Keyboard className="h-4 w-4" />
+              Shortcuts
+            </button>
 
             {(tool === 'brush' || tool === 'line') && (
               <div className="flex h-9 items-center gap-3 ml-4">
@@ -1610,10 +1556,6 @@ const App: React.FC = () => {
                 />
               </div>
             )}
-        </div>
-
-        <div className="px-4 py-1 text-[11px] text-gray-500 border-b border-gray-800">
-          Autosave: {autosaveStatus === 'restored' ? 'restored from local recovery' : autosaveStatus === 'saved' ? 'saved locally' : 'idle'}
         </div>
 
         {showShortcutHelp && (
@@ -1735,6 +1677,87 @@ const App: React.FC = () => {
           textEditorDraft={textEditorDraft}
           onTextEditorDraftChange={setTextEditorDraft}
         />
+
+        <div className="h-14 bg-gray-800 border-t border-gray-700 flex items-center px-4 gap-3 justify-between z-20">
+          <div className="flex h-9 items-center rounded-md border border-gray-700 bg-gray-900 px-3">
+            {selectedLayerSummary ? (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="rounded bg-blue-500/15 px-2 py-1 font-semibold text-blue-200">
+                  {selectedLayerSummary.type}
+                </span>
+                <span className="max-w-40 truncate text-gray-200">{selectedLayerSummary.name}</span>
+                <span className="text-gray-500">•</span>
+                <span className="text-gray-400">{selectedLayerSummary.detail}</span>
+                {selectedLayerSummary.context && (
+                  <>
+                    <span className="text-gray-500">•</span>
+                    <span className="text-cyan-300">{selectedLayerSummary.context}</span>
+                  </>
+                )}
+                {selectedIds.length === 1 && selectedLayer?.locked && <span className="text-amber-300">Locked</span>}
+                {selectedIds.length === 1 && selectedLayer && !selectedLayer.visible && <span className="text-rose-300">Hidden</span>}
+              </div>
+            ) : (
+              <span className="text-xs text-gray-400">
+                No selection
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 items-center gap-2 rounded-md border border-gray-700 bg-gray-900 px-3">
+              <span className="text-xs text-gray-400">Export</span>
+              <input
+                type="text"
+                value={exportFileName}
+                onChange={(event) => setExportFileName(event.target.value)}
+                className="h-6 w-28 rounded bg-transparent px-2 text-[11px] text-gray-200 outline-none border border-gray-700"
+                placeholder="filename"
+              />
+              <select
+                value={exportFormat}
+                onChange={(event) => setExportFormat(event.target.value as 'png' | 'jpeg')}
+                className="h-6 rounded bg-transparent px-1 text-[11px] text-gray-200 outline-none"
+              >
+                <option value="png">PNG</option>
+                <option value="jpeg">JPG</option>
+              </select>
+              <select
+                value={exportScale}
+                onChange={(event) => setExportScale(Number(event.target.value))}
+                className="h-6 rounded bg-transparent px-1 text-[11px] text-gray-200 outline-none"
+              >
+                <option value="1">1x</option>
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+                <option value="4">4x</option>
+              </select>
+              <select
+                value={exportBackgroundMode}
+                onChange={(event) => setExportBackgroundMode(event.target.value as 'current' | 'transparent' | 'solid')}
+                className="h-6 rounded bg-transparent px-1 text-[11px] text-gray-200 outline-none"
+              >
+                <option value="current">Current BG</option>
+                <option value="transparent">Transparent</option>
+                <option value="solid">Solid BG</option>
+              </select>
+              {exportBackgroundMode === 'solid' && (
+                <input
+                  type="color"
+                  value={exportBackgroundColor}
+                  onChange={(event) => setExportBackgroundColor(event.target.value)}
+                  className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
+                />
+              )}
+              <button
+                onClick={handleExport}
+                className="flex h-6 items-center gap-2 rounded bg-blue-600 px-3 text-[11px] font-medium text-white transition-colors hover:bg-blue-700 shadow-lg shadow-blue-900/20"
+              >
+                <Download className="h-3 w-3" /> Export
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <EditorSidebar

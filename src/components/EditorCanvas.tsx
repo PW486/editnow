@@ -485,7 +485,7 @@ const EditorCanvas = ({
   const canvasOrigin = { x: boardLeft + RULER_SIZE, y: boardTop + RULER_SIZE };
 
   const rulerStep = useMemo(() => {
-    const targetPixels = 64;
+    const targetPixels = 40;
     const rawStep = targetPixels / viewTransform.scale;
     const options = [10, 20, 25, 50, 100, 200, 250, 500, 1000];
     return options.find((option) => option >= rawStep) ?? 1000;
