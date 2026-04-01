@@ -1,4 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -277,6 +278,67 @@ const PropertyPanel: React.FC<PropertyPanelProps> = ({
   );
 };
 
+const InfoTooltip = ({ content }: { content: string }) => {
+  const [tooltip, setTooltip] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!tooltip) {
+      return;
+    }
+
+    const handleWindowChange = () => {
+      setTooltip(null);
+    };
+
+    window.addEventListener('scroll', handleWindowChange, true);
+    window.addEventListener('resize', handleWindowChange);
+
+    return () => {
+      window.removeEventListener('scroll', handleWindowChange, true);
+      window.removeEventListener('resize', handleWindowChange);
+    };
+  }, [tooltip]);
+
+  const showTooltip = (event: React.MouseEvent<HTMLSpanElement> | React.FocusEvent<HTMLSpanElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltip({
+      top: rect.bottom + 8,
+      left: rect.left + rect.width / 2,
+    });
+  };
+
+  const hideTooltip = () => {
+    setTooltip(null);
+  };
+
+  return (
+    <>
+      <span
+        tabIndex={0}
+        onMouseEnter={showTooltip}
+        onMouseLeave={hideTooltip}
+        onFocus={showTooltip}
+        onBlur={hideTooltip}
+        className="inline-flex text-gray-500 outline-none"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </span>
+      {tooltip && createPortal(
+        <div
+          className="pointer-events-none fixed z-[100] w-52 -translate-x-1/2 rounded-md border border-gray-700 bg-gray-950/95 px-2.5 py-2 text-[11px] text-gray-200 shadow-lg"
+          style={{
+            top: tooltip.top,
+            left: tooltip.left,
+          }}
+        >
+          {content}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+};
+
 const ImageFilterSection = ({
   layer,
   canvasSize,
@@ -449,12 +511,7 @@ const ImageFilterSection = ({
       <div className="mt-2 space-y-2 pt-3 border-t border-gray-700">
         <div className="flex items-center gap-2">
           <h4 className="text-xs font-semibold text-gray-400">Crop</h4>
-          <div className="group relative">
-            <Info className="h-3.5 w-3.5 text-gray-500" />
-            <div className="pointer-events-none absolute left-5 top-1/2 z-10 w-48 -translate-y-1/2 rounded-md border border-gray-700 bg-gray-950/95 px-2.5 py-2 text-[11px] text-gray-200 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-              Drag to move the crop box. Resize from the bottom-right handle.
-            </div>
-          </div>
+          <InfoTooltip content="Drag to move the crop box. Resize from the bottom-right handle." />
         </div>
         <ImageCropPreview
           layer={layer}
@@ -951,9 +1008,9 @@ const LineSection = ({
 
 const DrawingSection = ({ strokeCount }: { strokeCount: number }) => (
   <div className="space-y-3 pt-2 border-t border-gray-700">
-    <h4 className="text-xs font-semibold text-gray-400">Drawing Layer</h4>
-    <div className="rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs text-gray-300">
-      Brush strokes are added to this layer while it is selected.
+    <div className="flex items-center gap-2">
+      <h4 className="text-xs font-semibold text-gray-400">Drawing Layer</h4>
+      <InfoTooltip content="Brush strokes are added to this layer while it is selected." />
     </div>
     <div className="flex items-center justify-between text-xs text-gray-400">
       <span>Strokes</span>

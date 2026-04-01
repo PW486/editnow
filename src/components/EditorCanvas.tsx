@@ -25,7 +25,6 @@ interface EditorCanvasProps {
   tool: ToolType;
   layers: LayerItem[];
   draftStroke: DrawingStroke | null;
-  selectedIds: string[];
   viewTransform: ViewTransform;
   stageRef: RefObject<Konva.Stage | null>;
   transformerRef: RefObject<Konva.Transformer | null>;
@@ -72,7 +71,6 @@ const EditorCanvas = ({
   tool,
   layers,
   draftStroke,
-  selectedIds,
   viewTransform,
   stageRef,
   transformerRef,
@@ -122,15 +120,16 @@ const EditorCanvas = ({
       left: editingTextLayer.x * viewTransform.scale + viewTransform.position.x,
       top: editingTextLayer.y * viewTransform.scale + viewTransform.position.y,
       width: width * viewTransform.scale,
-      minHeight: height * viewTransform.scale,
+      height: height * viewTransform.scale,
       padding: 0,
       margin: 0,
       border: '1px solid #2563eb',
       outline: 'none',
       resize: 'none',
       overflow: 'hidden',
-      background: 'rgba(17, 24, 39, 0.96)',
+      background: 'transparent',
       color: editingTextLayer.fill,
+      caretColor: editingTextLayer.fill,
       textAlign: editingTextLayer.align,
       fontFamily: editingTextLayer.fontFamily,
       fontSize: `${editingTextLayer.fontSize * viewTransform.scale}px`,
@@ -242,7 +241,7 @@ const EditorCanvas = ({
 
   const handleMouseDown = (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     const stage = event.target.getStage();
-    if (tool === 'select' && editingTextLayerId === null && spacePressed) {
+    if (editingTextLayerId === null && spacePressed) {
       isPanningRef.current = true;
       const clientPoint = getEventClientPoint(event.evt);
       if (clientPoint) {
@@ -661,16 +660,8 @@ const EditorCanvas = ({
     }
 
     if (layer.type === 'drawing') {
-      const showEmptyPlaceholder = layer.strokes.length === 0;
       return (
         <Group {...commonProps}>
-          {showEmptyPlaceholder && (
-            <>
-              <Rect width={180} height={120} cornerRadius={14} fill={selectedIds.includes(layer.id) ? 'rgba(37, 99, 235, 0.14)' : 'rgba(148, 163, 184, 0.08)'} stroke={selectedIds.includes(layer.id) ? '#60a5fa' : '#64748b'} strokeWidth={1.5} dash={[8, 6]} />
-              <Text x={16} y={18} text="Empty drawing layer" fontSize={14} fontStyle="bold" fill={selectedIds.includes(layer.id) ? '#bfdbfe' : '#94a3b8'} listening={false} />
-              <Text x={16} y={42} width={148} text="Select this layer and draw with Brush." fontSize={12} fill="#94a3b8" listening={false} />
-            </>
-          )}
           {layer.strokes.map((stroke, index) => (
             <Line key={`${layer.id}-stroke-${index}`} points={stroke.points} stroke={stroke.stroke} strokeWidth={stroke.strokeWidth} tension={stroke.tension} lineCap={stroke.lineCap} lineJoin={stroke.lineJoin} listening={false} />
           ))}
@@ -706,7 +697,7 @@ const EditorCanvas = ({
   };
 
   return (
-    <div ref={workspaceRef} className="relative flex-1 min-h-0 overflow-hidden bg-gray-900/50">
+    <div ref={workspaceRef} data-editor-workspace="true" className="relative flex-1 min-h-0 overflow-hidden bg-gray-900/50">
       <div className="relative" style={workspaceStyle}>
         <div className="absolute left-0 top-0 z-20 flex h-6 w-6 items-center justify-center border border-gray-700 bg-gray-900 text-[10px] text-gray-500">
           0
@@ -778,6 +769,7 @@ const EditorCanvas = ({
             {editingTextLayerId && textEditorStyle && (
               <textarea
                 ref={textareaRef}
+                rows={1}
                 value={textEditorDraft}
                 onChange={(event) => onTextEditorDraftChange(event.target.value)}
                 onBlur={() => finishTextEditing(true)}
@@ -811,7 +803,7 @@ const EditorCanvas = ({
           onTouchEnd={handleMouseUp}
           onWheel={handleWheel}
           className="absolute left-0 top-0 z-10"
-          style={{ cursor: tool === 'select' && editingTextLayerId === null && spacePressed ? 'grab' : 'default' }}
+          style={{ cursor: editingTextLayerId === null && spacePressed ? 'grab' : 'default' }}
         >
           <Layer>
             <Group

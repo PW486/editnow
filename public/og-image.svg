@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#020617"/>
+  <rect x="36" y="36" width="1128" height="558" rx="36" fill="url(#bg)"/>
+  <rect x="76" y="76" width="1048" height="478" rx="28" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
+  <rect x="76" y="76" width="1048" height="54" rx="28" fill="#111827"/>
+  <circle cx="117" cy="103" r="8" fill="#F87171"/>
+  <circle cx="145" cy="103" r="8" fill="#FBBF24"/>
+  <circle cx="173" cy="103" r="8" fill="#34D399"/>
+  <rect x="118" y="185" width="292" height="292" rx="58" fill="#111827" stroke="#334155" stroke-width="8"/>
+  <rect x="160" y="227" width="206" height="206" rx="40" fill="#F8FAFC"/>
+  <path d="M200 285H325" stroke="#CBD5E1" stroke-width="18" stroke-linecap="round"/>
+  <path d="M200 330H297" stroke="#CBD5E1" stroke-width="18" stroke-linecap="round"/>
+  <path d="M200 375H268" stroke="#CBD5E1" stroke-width="18" stroke-linecap="round"/>
+  <path d="M329.095 231.4L360.157 262.462L274.317 348.302L239.161 355.198L246.057 320.042L329.095 231.4Z" fill="#22C55E"/>
+  <path d="M318.944 241.551L350.006 272.613" stroke="#DCFCE7" stroke-width="10" stroke-linecap="round"/>
+  <path d="M486 235H900" stroke="#1E293B" stroke-width="2"/>
+  <text x="486" y="252" fill="#F8FAFC" font-family="Inter, Arial, sans-serif" font-size="88" font-weight="700">Edit Now</text>
+  <text x="486" y="318" fill="#94A3B8" font-family="Inter, Arial, sans-serif" font-size="34">A focused canvas editor for fast visual edits.</text>
+  <text x="486" y="402" fill="#E2E8F0" font-family="Inter, Arial, sans-serif" font-size="28">Text, shapes, drawing layers, crop, export.</text>
+  <rect x="486" y="440" width="170" height="48" rx="24" fill="#111827" stroke="#334155"/>
+  <text x="519" y="471" fill="#A5F3FC" font-family="Inter, Arial, sans-serif" font-size="22">Minimal editor</text>
+  <rect x="672" y="440" width="136" height="48" rx="24" fill="#14532D"/>
+  <text x="708" y="471" fill="#DCFCE7" font-family="Inter, Arial, sans-serif" font-size="22">Fast export</text>
+  <defs>
+    <linearGradient id="bg" x1="86" y1="70" x2="1080" y2="594" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+</svg>

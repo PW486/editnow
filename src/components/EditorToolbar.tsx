@@ -79,7 +79,6 @@ const EditorToolbar = ({
           onHideTooltip={hideTooltip}
           label="Select"
         />
-        <div className="w-8 h-[1px] bg-gray-700 my-1"></div>
         <ToolbarButton
           icon={ImagePlus}
           onClick={onUpload}
@@ -94,7 +93,6 @@ const EditorToolbar = ({
           onHideTooltip={hideTooltip}
           label="New Drawing Layer"
         />
-        <div className="w-8 h-[1px] bg-gray-700 my-1"></div>
         <ToolbarButton
           icon={Pen}
           isActive={selectedTool === 'brush'}
@@ -103,6 +101,7 @@ const EditorToolbar = ({
           onHideTooltip={hideTooltip}
           label="Brush"
         />
+        <div className="w-8 h-[1px] bg-gray-700 my-1"></div>
         <ToolbarButton
           icon={Minus}
           isActive={selectedTool === 'line'}

@@ -82,10 +82,28 @@ const App: React.FC = () => {
     () => layers.find((layer) => layer.id === selectedId) ?? null,
     [layers, selectedId],
   );
+  const activeDrawingLayer = useMemo(
+    () => layers.find((layer) => layer.id === selectedId && layer.type === 'drawing' && layer.visible && !layer.locked) ?? null,
+    [layers, selectedId],
+  );
   const selectedLayer = useMemo(
     () => (selectedNestedLayerId ? findLayerByIdDeep(layers, selectedNestedLayerId) : selectedTopLevelLayer),
     [layers, selectedNestedLayerId, selectedTopLevelLayer],
   );
+  const draftStrokePreview = useMemo(() => {
+    if (!draftStroke) {
+      return null;
+    }
+
+    if (!activeDrawingLayer || activeDrawingLayer.type !== 'drawing') {
+      return draftStroke;
+    }
+
+    return {
+      ...draftStroke,
+      points: draftStroke.points.map((value, index) => value + (index % 2 === 0 ? activeDrawingLayer.x : activeDrawingLayer.y)),
+    };
+  }, [activeDrawingLayer, draftStroke]);
   const activeEditingTextLayerId = useMemo(
     () => (editingTextLayerId && layers.some((layer) => layer.id === editingTextLayerId && layer.type === 'text') ? editingTextLayerId : null),
     [editingTextLayerId, layers],
@@ -936,53 +954,100 @@ const App: React.FC = () => {
     setActivePanel('history');
   };
 
-  const adjustZoom = (direction: 'in' | 'out') => {
-    setViewTransform((current) => ({
-      scale: direction === 'in'
-        ? Math.min(current.scale * 1.1, 4)
-        : Math.max(current.scale / 1.1, 0.25),
-      position: current.position,
-    }));
+  const getViewportMetrics = () => {
+    const workspaceElement = document.querySelector('[data-editor-workspace="true"]');
+    if (!(workspaceElement instanceof HTMLElement)) {
+      return null;
+    }
+
+    const rulerSize = 24;
+    const boardWidth = canvasSize.width + rulerSize;
+    const boardHeight = canvasSize.height + rulerSize;
+    const workspaceWidth = Math.max(workspaceElement.clientWidth, boardWidth + 96);
+    const workspaceHeight = Math.max(workspaceElement.clientHeight, boardHeight + 96);
+    const boardLeft = Math.max(rulerSize, Math.round((workspaceWidth - boardWidth) / 2));
+    const boardTop = Math.max(rulerSize, Math.round((workspaceHeight - boardHeight) / 2));
+
+    return {
+      viewportWidth: workspaceElement.clientWidth,
+      viewportHeight: workspaceElement.clientHeight,
+      canvasOrigin: {
+        x: boardLeft + rulerSize,
+        y: boardTop + rulerSize,
+      },
+    };
   };
 
-  const fitCanvasToViewport = () => {
-    // Dynamically calculate available space based on the workspace container
-    const workspaceElement = document.querySelector('.flex-1.min-h-0.overflow-hidden.bg-gray-900\\/50');
-    if (!workspaceElement) return;
+  const centerCanvasAtScale = (scale: number) => {
+    const metrics = getViewportMetrics();
+    if (!metrics) {
+      return;
+    }
 
-    const { clientWidth, clientHeight } = workspaceElement;
-    
-    // Add some padding
-    const padding = 40;
-    const availableWidth = Math.max(clientWidth - padding * 2, 320);
-    const availableHeight = Math.max(clientHeight - padding * 2, 240);
-
-    const scale = Math.min(
-      4, // Max scale cap
-      Math.min(availableWidth / canvasSize.width, availableHeight / canvasSize.height)
-    );
-
-    // Ensure a minimum reasonable scale so it doesn't disappear
-    const finalScale = Math.max(0.1, scale);
-
-    // EditorCanvas centers the "board" (ruler + canvas) internally.
-    // To perfectly center the scaled canvas, we need to offset the position
-    // to account for the scale and the ruler's presence.
-    // RULER_SIZE is 24px.
     setViewTransform({
-      scale: finalScale,
+      scale,
       position: {
-        x: Math.round((canvasSize.width - canvasSize.width * finalScale) / 2 - 12),
-        y: Math.round((canvasSize.height - canvasSize.height * finalScale) / 2 - 12),
+        x: Math.round((metrics.viewportWidth - canvasSize.width * scale) / 2 - metrics.canvasOrigin.x),
+        y: Math.round((metrics.viewportHeight - canvasSize.height * scale) / 2 - metrics.canvasOrigin.y),
       },
     });
   };
 
-  const resetViewTransform = () => {
-    setViewTransform({
-      scale: 1,
-      position: { x: -12, y: -12 },
+  const adjustZoom = (direction: 'in' | 'out') => {
+    const metrics = getViewportMetrics();
+    if (!metrics) {
+      return;
+    }
+
+    setViewTransform((current) => {
+      const nextScale = direction === 'in'
+        ? Math.min(current.scale * 1.05, 4)
+        : Math.max(current.scale / 1.05, 0.25);
+      const viewportCenter = {
+        x: metrics.viewportWidth / 2,
+        y: metrics.viewportHeight / 2,
+      };
+      const contentPoint = {
+        x: (viewportCenter.x - metrics.canvasOrigin.x - current.position.x) / current.scale,
+        y: (viewportCenter.y - metrics.canvasOrigin.y - current.position.y) / current.scale,
+      };
+
+      return {
+        scale: nextScale,
+        position: {
+          x: viewportCenter.x - metrics.canvasOrigin.x - contentPoint.x * nextScale,
+          y: viewportCenter.y - metrics.canvasOrigin.y - contentPoint.y * nextScale,
+        },
+      };
     });
+  };
+
+  const fitCanvasToViewport = () => {
+    const metrics = getViewportMetrics();
+    if (!metrics) {
+      return;
+    }
+
+    const padding = 40;
+    const availableWidth = Math.max(metrics.viewportWidth - padding * 2, 320);
+    const availableHeight = Math.max(metrics.viewportHeight - padding * 2, 240);
+    const finalScale = Math.max(0.1, Math.min(4, Math.min(availableWidth / canvasSize.width, availableHeight / canvasSize.height)));
+    centerCanvasAtScale(finalScale);
+  };
+
+  const resetViewTransform = () => {
+    centerCanvasAtScale(1);
+  };
+
+  const getDrawingPoint = (position: Point): Point => {
+    if (!activeDrawingLayer || activeDrawingLayer.type !== 'drawing') {
+      return position;
+    }
+
+    return {
+      x: position.x - activeDrawingLayer.x,
+      y: position.y - activeDrawingLayer.y,
+    };
   };
 
   const handlePointerDown = (position: Point | null, clickedOnEmpty: boolean) => {
@@ -1001,7 +1066,7 @@ const App: React.FC = () => {
 
     setIsDrawing(true);
     if (tool === 'brush') {
-      setDraftStroke(createDrawingStroke(position, drawingColor, drawingSize));
+      setDraftStroke(createDrawingStroke(getDrawingPoint(position), drawingColor, drawingSize));
       return;
     }
 
@@ -1019,7 +1084,7 @@ const App: React.FC = () => {
           return currentStroke;
         }
 
-        return appendPointToStroke(currentStroke, position);
+        return appendPointToStroke(currentStroke, getDrawingPoint(position));
       });
       return;
     }
@@ -1043,13 +1108,13 @@ const App: React.FC = () => {
     }
 
     if (tool === 'brush' && draftStroke) {
-      const activeDrawingLayer = layersRef.current.find(
+      const currentDrawingLayer = layersRef.current.find(
         (layer) => layer.id === selectedId && layer.type === 'drawing' && layer.visible && !layer.locked,
       );
 
-      if (activeDrawingLayer?.type === 'drawing') {
+      if (currentDrawingLayer?.type === 'drawing') {
         commitLayers(
-          updateLayerById(layersRef.current, activeDrawingLayer.id, (layer) =>
+          updateLayerById(layersRef.current, currentDrawingLayer.id, (layer) =>
             layer.type === 'drawing'
               ? {
                   ...layer,
@@ -1657,8 +1722,7 @@ const App: React.FC = () => {
           isTransparent={isTransparent}
           tool={tool}
           layers={visibleLayers}
-          draftStroke={draftStroke}
-          selectedIds={selectedIds}
+          draftStroke={draftStrokePreview}
           viewTransform={viewTransform}
           stageRef={stageRef}
           transformerRef={transformerRef}
