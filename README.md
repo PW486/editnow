@@ -54,23 +54,6 @@ npm run preview
 - `Cmd/Ctrl + Z`: Undo
 - `Cmd/Ctrl + Shift + Z`: Redo
 
-## Project Notes
-
-- The canvas editor lives in `src/App.tsx` and `src/components/EditorCanvas.tsx`.
-- Toolbar and property UI live in `src/components/EditorToolbar.tsx` and `src/components/PropertyPanel.tsx`.
-- Generated branding and SEO assets live in `public/`.
-
-## SEO / Icons
-
-The project includes:
-
-- SVG favicon and logo mark
-- PNG favicons (`16x16`, `32x32`)
-- Apple touch icon
-- Android Chrome icons (`192x192`, `512x512`)
-- Open Graph image
-- Web app manifest
-
 ## License
 
 No license file is included currently.
