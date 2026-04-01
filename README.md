@@ -1,4 +1,4 @@
-# Edit Now
+# 🖼️ Edit Now
 
 Edit Now is a lightweight canvas editor built with React, TypeScript, Vite, and Konva. It is designed for quick visual edits without the overhead of a full design suite.
 
