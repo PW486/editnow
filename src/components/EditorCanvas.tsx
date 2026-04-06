@@ -1,6 +1,6 @@
 import Konva from 'konva';
 import { Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import type {
   CanvasSize,
@@ -34,8 +34,10 @@ interface EditorCanvasProps {
   onViewTransformChange: (nextViewTransform: ViewTransform) => void;
   onSelectLayer: (layerId: string, additive?: boolean) => void;
   onSelectLayers: (layerIds: string[], additive?: boolean) => void;
+  selectedIds: string[];
   onLayerDragEnd: (layerId: string, position: Point) => void;
   onLayerTransformEnd: (layerId: string, node: Konva.Node) => void;
+  onSelectionTransformEnd: () => void;
   editingTextLayerId: string | null;
   onStartTextEdit: (layerId: string) => void;
   onCommitTextEdit: (layerId: string, text: string) => void;
@@ -80,8 +82,10 @@ const EditorCanvas = ({
   onViewTransformChange,
   onSelectLayer,
   onSelectLayers,
+  selectedIds,
   onLayerDragEnd,
   onLayerTransformEnd,
+  onSelectionTransformEnd,
   editingTextLayerId,
   onStartTextEdit,
   onCommitTextEdit,
@@ -93,6 +97,8 @@ const EditorCanvas = ({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isPanningRef = useRef(false);
   const panStartRef = useRef<{ x: number; y: number; position: Point } | null>(null);
+  const multiDragOriginsRef = useRef<Map<string, Point> | null>(null);
+  const [textEditorHeight, setTextEditorHeight] = useState<number | null>(null);
   const [spacePressed, setSpacePressed] = useState(false);
   const [snapGuides, setSnapGuides] = useState<SnapGuideState>({ vertical: null, horizontal: null });
   const [marqueeSelection, setMarqueeSelection] = useState<MarqueeSelectionState | null>(null);
@@ -108,11 +114,10 @@ const EditorCanvas = ({
       return null;
     }
 
-    const lineCount = Math.max(textEditorDraft.split('\n').length, 1);
     const width = Math.max(editingTextLayer.width ?? 220, 160);
     const height = Math.max(
-      editingTextLayer.fontSize * editingTextLayer.lineHeight * lineCount + 10,
-      editingTextLayer.fontSize * 1.6,
+      textEditorHeight ?? 0,
+      editingTextLayer.fontSize * editingTextLayer.lineHeight,
     );
 
     return {
@@ -123,7 +128,7 @@ const EditorCanvas = ({
       height: height * viewTransform.scale,
       padding: 0,
       margin: 0,
-      border: '1px solid #2563eb',
+      border: 'none',
       outline: 'none',
       resize: 'none',
       overflow: 'hidden',
@@ -134,17 +139,24 @@ const EditorCanvas = ({
       fontFamily: editingTextLayer.fontFamily,
       fontSize: `${editingTextLayer.fontSize * viewTransform.scale}px`,
       lineHeight: String(editingTextLayer.lineHeight),
+      fontWeight: '400',
+      letterSpacing: 'normal',
       transform: `rotate(${editingTextLayer.rotation}deg)`,
       transformOrigin: 'left top',
       whiteSpace: 'pre-wrap',
+      boxShadow: 'inset 0 0 0 1px #2563eb',
+      appearance: 'none',
+      WebkitAppearance: 'none',
+      MozAppearance: 'none',
       zIndex: 30,
       borderRadius: '4px',
       boxSizing: 'border-box',
     };
-  }, [editingTextLayer, editingTextLayerId, textEditorDraft, viewTransform]);
+  }, [editingTextLayer, editingTextLayerId, textEditorDraft, textEditorHeight, viewTransform]);
 
   useEffect(() => {
     if (!editingTextLayerId) {
+      setTextEditorHeight(null);
       return;
     }
 
@@ -157,6 +169,24 @@ const EditorCanvas = ({
       window.cancelAnimationFrame(frameId);
     };
   }, [editingTextLayerId]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!editingTextLayerId || !editingTextLayer || !textarea) {
+      return;
+    }
+
+    const previousHeight = textarea.style.height;
+    textarea.style.height = 'auto';
+    const measuredHeight = Math.max(
+      textarea.scrollHeight / Math.max(viewTransform.scale, 0.01),
+      editingTextLayer.fontSize * editingTextLayer.lineHeight,
+    );
+    textarea.style.height = previousHeight;
+    setTextEditorHeight((current) => (
+      current !== null && Math.abs(current - measuredHeight) < 0.5 ? current : measuredHeight
+    ));
+  }, [editingTextLayer, editingTextLayerId, textEditorDraft, viewTransform.scale]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -397,6 +427,8 @@ const EditorCanvas = ({
     const bounds = getLayerBounds(layer, node);
     const centerX = (bounds.left + bounds.right) / 2;
     const centerY = (bounds.top + bounds.bottom) / 2;
+    const nodeX = node.x();
+    const nodeY = node.y();
     const verticalCandidates = [0, canvasSize.width / 2, canvasSize.width];
     const horizontalCandidates = [0, canvasSize.height / 2, canvasSize.height];
 
@@ -432,9 +464,9 @@ const EditorCanvas = ({
     let bestHorizontalDiff = SNAP_THRESHOLD + 1;
 
     const xChecks = [
-      { value: bounds.left, adjust: (guide: number) => guide },
-      { value: centerX, adjust: (guide: number) => guide - (bounds.right - bounds.left) / 2 },
-      { value: bounds.right, adjust: (guide: number) => guide - (bounds.right - bounds.left) },
+      { value: bounds.left, adjust: (guide: number) => nodeX + (guide - bounds.left) },
+      { value: centerX, adjust: (guide: number) => nodeX + (guide - centerX) },
+      { value: bounds.right, adjust: (guide: number) => nodeX + (guide - bounds.right) },
     ];
 
     for (const guide of verticalCandidates) {
@@ -449,9 +481,9 @@ const EditorCanvas = ({
     }
 
     const yChecks = [
-      { value: bounds.top, adjust: (guide: number) => guide },
-      { value: centerY, adjust: (guide: number) => guide - (bounds.bottom - bounds.top) / 2 },
-      { value: bounds.bottom, adjust: (guide: number) => guide - (bounds.bottom - bounds.top) },
+      { value: bounds.top, adjust: (guide: number) => nodeY + (guide - bounds.top) },
+      { value: centerY, adjust: (guide: number) => nodeY + (guide - centerY) },
+      { value: bounds.bottom, adjust: (guide: number) => nodeY + (guide - bounds.bottom) },
     ];
 
     for (const guide of horizontalCandidates) {
@@ -575,7 +607,21 @@ const EditorCanvas = ({
 
     const handleDragEnd = (event: Konva.KonvaEventObject<DragEvent>) => {
       setSnapGuides({ vertical: null, horizontal: null });
+      multiDragOriginsRef.current = null;
       onLayerDragEnd(layer.id, { x: event.target.x(), y: event.target.y() });
+    };
+
+    const handleDragStart = () => {
+      if (!(selectedIds.includes(layer.id) && selectedIds.length > 1)) {
+        multiDragOriginsRef.current = null;
+        return;
+      }
+
+      multiDragOriginsRef.current = new Map(
+        layers
+          .filter((item) => selectedIds.includes(item.id))
+          .map((item) => [item.id, { x: item.x, y: item.y }]),
+      );
     };
 
     const handleTransformEnd = (event: Konva.KonvaEventObject<Event>) => {
@@ -586,6 +632,37 @@ const EditorCanvas = ({
       const snapped = getSnappedPosition(layer, event.target);
       event.target.position({ x: snapped.x, y: snapped.y });
       setSnapGuides(snapped.guides);
+
+      const dragOrigins = multiDragOriginsRef.current;
+      if (!dragOrigins || !selectedIds.includes(layer.id) || selectedIds.length <= 1) {
+        return;
+      }
+
+      const origin = dragOrigins.get(layer.id);
+      const stage = event.target.getStage();
+      if (!origin || !stage) {
+        return;
+      }
+
+      const dx = snapped.x - origin.x;
+      const dy = snapped.y - origin.y;
+
+      selectedIds.forEach((selectedId) => {
+        if (selectedId === layer.id) {
+          return;
+        }
+
+        const selectedOrigin = dragOrigins.get(selectedId);
+        const node = stage.findOne(`#${selectedId}`);
+        if (!selectedOrigin || !node) {
+          return;
+        }
+
+        node.position({
+          x: selectedOrigin.x + dx,
+          y: selectedOrigin.y + dy,
+        });
+      });
     };
 
     const commonProps = {
@@ -599,6 +676,7 @@ const EditorCanvas = ({
       listening: !nested,
       onClick: handleSelect,
       onTap: handleSelect,
+      onDragStart: handleDragStart,
       onDragMove: handleDragMove,
       onDragEnd: handleDragEnd,
       onTransformEnd: handleTransformEnd,
@@ -660,10 +738,27 @@ const EditorCanvas = ({
     }
 
     if (layer.type === 'drawing') {
+      const bounds = getLayerLocalBounds(layer);
       return (
         <Group {...commonProps}>
+          <Rect
+            x={bounds.left}
+            y={bounds.top}
+            width={Math.max(1, bounds.right - bounds.left)}
+            height={Math.max(1, bounds.bottom - bounds.top)}
+            fill="rgba(0,0,0,0.001)"
+            strokeEnabled={false}
+          />
           {layer.strokes.map((stroke, index) => (
-            <Line key={`${layer.id}-stroke-${index}`} points={stroke.points} stroke={stroke.stroke} strokeWidth={stroke.strokeWidth} tension={stroke.tension} lineCap={stroke.lineCap} lineJoin={stroke.lineJoin} listening={false} />
+            <Line
+              key={`${layer.id}-stroke-${index}`}
+              points={stroke.points}
+              stroke={stroke.stroke}
+              strokeWidth={stroke.strokeWidth}
+              tension={stroke.tension}
+              lineCap={stroke.lineCap}
+              lineJoin={stroke.lineJoin}
+            />
           ))}
         </Group>
       );
@@ -874,6 +969,7 @@ const EditorCanvas = ({
               )}
               <Transformer
                 ref={transformerRef}
+                onTransformEnd={onSelectionTransformEnd}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (newBox.width < 5 || newBox.height < 5) {
                     return oldBox;

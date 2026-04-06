@@ -838,91 +838,119 @@ const TextSection = ({
 }: {
   layer: TextLayer;
   onChange: (patch: Partial<LayerItem>) => void;
-}) => (
-  <div className="space-y-3 pt-2 border-t border-gray-700">
-    <div>
-      <label className="text-xs text-gray-400 block mb-1">Content</label>
-      <textarea
-        value={layer.text}
-        onChange={(event) => onChange({ text: event.target.value })}
-        className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none min-h-[60px]"
-      />
-    </div>
-    <div className="grid grid-cols-2 gap-2">
+}) => {
+  const [widthDraft, setWidthDraft] = useState(String(Math.round(layer.width ?? 220)));
+
+  useEffect(() => {
+    setWidthDraft(String(Math.round(layer.width ?? 220)));
+  }, [layer.id, layer.width]);
+
+  const commitWidthDraft = () => {
+    const parsed = Number(widthDraft);
+    if (!Number.isFinite(parsed)) {
+      setWidthDraft(String(Math.round(layer.width ?? 220)));
+      return;
+    }
+
+    const nextWidth = Math.max(80, parsed);
+    setWidthDraft(String(Math.round(nextWidth)));
+    if (nextWidth !== layer.width) {
+      onChange({ width: nextWidth });
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-gray-700">
       <div>
-        <label className="text-xs text-gray-400 block mb-1">Font Size</label>
+        <label className="text-xs text-gray-400 block mb-1">Content</label>
+        <textarea
+          value={layer.text}
+          onChange={(event) => onChange({ text: event.target.value })}
+          className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none min-h-[60px]"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Font Size</label>
+          <input
+            type="number"
+            value={layer.fontSize}
+            onChange={(event) => onChange({ fontSize: Number(event.target.value) })}
+            className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={layer.fill}
+              onChange={(event) => onChange({ fill: event.target.value })}
+              className="w-8 h-8 rounded cursor-pointer border-0 p-0 overflow-hidden bg-transparent"
+            />
+            <span className="text-xs text-gray-300">{layer.fill}</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Font Family</label>
+        <select
+          value={layer.fontFamily}
+          onChange={(event) => onChange({ fontFamily: event.target.value })}
+          className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
+        >
+          <option value="Arial">Arial</option>
+          <option value="Inter">Inter</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Verdana">Verdana</option>
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Alignment</label>
+        <select
+          value={layer.align}
+          onChange={(event) => onChange({ align: event.target.value as TextLayer['align'] })}
+          className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
+        >
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Line Height</label>
+        <input
+          type="range"
+          min="0.8"
+          max="2.4"
+          step="0.05"
+          value={layer.lineHeight}
+          onChange={(event) => onChange({ lineHeight: Number(event.target.value) })}
+          className="w-full accent-blue-500"
+        />
+        <div className="text-right text-xs text-gray-400">{layer.lineHeight.toFixed(2)}</div>
+      </div>
+      <div className="col-span-2">
+        <label className="text-xs text-gray-400 block mb-1">Text Box Width</label>
         <input
           type="number"
-          value={layer.fontSize}
-          onChange={(event) => onChange({ fontSize: Number(event.target.value) })}
+          min="80"
+          value={widthDraft}
+          onChange={(event) => setWidthDraft(event.target.value)}
+          onBlur={commitWidthDraft}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur();
+            }
+          }}
           className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
         />
       </div>
-      <div>
-        <label className="text-xs text-gray-400 block mb-1">Color</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={layer.fill}
-            onChange={(event) => onChange({ fill: event.target.value })}
-            className="w-8 h-8 rounded cursor-pointer border-0 p-0 overflow-hidden bg-transparent"
-          />
-          <span className="text-xs text-gray-300">{layer.fill}</span>
-        </div>
-      </div>
     </div>
-    <div>
-      <label className="text-xs text-gray-400 block mb-1">Font Family</label>
-      <select
-        value={layer.fontFamily}
-        onChange={(event) => onChange({ fontFamily: event.target.value })}
-        className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
-      >
-        <option value="Arial">Arial</option>
-        <option value="Inter">Inter</option>
-        <option value="Times New Roman">Times New Roman</option>
-        <option value="Courier New">Courier New</option>
-        <option value="Georgia">Georgia</option>
-        <option value="Verdana">Verdana</option>
-      </select>
-    </div>
-    <div>
-      <label className="text-xs text-gray-400 block mb-1">Alignment</label>
-      <select
-        value={layer.align}
-        onChange={(event) => onChange({ align: event.target.value as TextLayer['align'] })}
-        className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
-      >
-        <option value="left">Left</option>
-        <option value="center">Center</option>
-        <option value="right">Right</option>
-      </select>
-    </div>
-    <div>
-      <label className="text-xs text-gray-400 block mb-1">Line Height</label>
-      <input
-        type="range"
-        min="0.8"
-        max="2.4"
-        step="0.05"
-        value={layer.lineHeight}
-        onChange={(event) => onChange({ lineHeight: Number(event.target.value) })}
-        className="w-full accent-blue-500"
-      />
-      <div className="text-right text-xs text-gray-400">{layer.lineHeight.toFixed(2)}</div>
-    </div>
-    <div className="col-span-2">
-      <label className="text-xs text-gray-400 block mb-1">Text Box Width</label>
-      <input
-        type="number"
-        min="80"
-        value={Math.round(layer.width ?? 220)}
-        onChange={(event) => onChange({ width: Math.max(80, Number(event.target.value)) })}
-        className="w-full bg-gray-700 rounded px-2 py-1 text-sm text-white border border-gray-600 focus:border-blue-500 outline-none"
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 const ShapeSection = ({
   layer,

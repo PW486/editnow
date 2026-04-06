@@ -1,5 +1,5 @@
 import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { Download, FolderOpen, Keyboard, Redo, RotateCcw, Save, Undo, ZoomIn, ZoomOut } from 'lucide-react';
+import { Download, FolderOpen, Keyboard, Redo, RotateCcw, Save, Trash2, Undo, ZoomIn, ZoomOut } from 'lucide-react';
 import Konva from 'konva';
 import EditorCanvas from './components/EditorCanvas';
 import EditorSidebar from './components/EditorSidebar';
@@ -31,6 +31,12 @@ import { deserializeProject, isSerializedProject, serializeLayers, serializeProj
 import type { ActivePanel, CanvasSize, DrawingStroke, LayerItem, LineLayer, Point, ToolType, ViewTransform } from './types';
 
 const AUTOSAVE_KEY = 'editnow-autosave-v1';
+const DEFAULT_CANVAS_SIZE: CanvasSize = { width: 800, height: 600 };
+const DEFAULT_BG_COLOR = '#ffffff';
+const DEFAULT_VIEW_TRANSFORM: ViewTransform = {
+  scale: 1,
+  position: { x: 0, y: 0 },
+};
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<LayerItem[][]>([[]]);
@@ -40,8 +46,8 @@ const App: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedNestedLayerId, setSelectedNestedLayerId] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolType>('select');
-  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 800, height: 600 });
-  const [bgColor, setBgColor] = useState('#ffffff');
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>(DEFAULT_CANVAS_SIZE);
+  const [bgColor, setBgColor] = useState(DEFAULT_BG_COLOR);
   const [isTransparent, setIsTransparent] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftLine, setDraftLine] = useState<LineLayer | null>(null);
@@ -51,10 +57,7 @@ const App: React.FC = () => {
   const [activePanel, setActivePanel] = useState<ActivePanel>('layers');
   const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [textEditorDraft, setTextEditorDraft] = useState('');
-  const [viewTransform, setViewTransform] = useState<ViewTransform>({
-    scale: 1,
-    position: { x: 0, y: 0 },
-  });
+  const [viewTransform, setViewTransform] = useState<ViewTransform>(DEFAULT_VIEW_TRANSFORM);
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportScale, setExportScale] = useState(2);
   const [exportBackgroundMode, setExportBackgroundMode] = useState<'current' | 'transparent' | 'solid'>('current');
@@ -172,25 +175,13 @@ const App: React.FC = () => {
         }
 
         const project = await deserializeProject(parsed);
-        setCanvasSize(project.canvasSize);
-        setBgColor(project.bgColor);
-        setIsTransparent(project.isTransparent);
-        setSelectedIds([]);
-        setSelectedNestedLayerId(null);
-        setTool('select');
-        setActivePanel('layers');
-        setEditingTextLayerId(null);
-        setTextEditorDraft('');
-        setDraftLine(null);
-        setDraftStroke(null);
-        setViewTransform({ scale: 1, position: { x: 0, y: 0 } });
-        setHistory([project.layers]);
-        historyRef.current = [project.layers];
-        setHistoryLabels(['Recovered autosave']);
-        historyLabelsRef.current = ['Recovered autosave'];
-        setHistoryStep(0);
-        historyStepRef.current = 0;
-        replaceVisibleLayers(project.layers);
+        applyProjectState({
+          nextLayers: project.layers,
+          nextCanvasSize: project.canvasSize,
+          nextBgColor: project.bgColor,
+          nextTransparent: project.isTransparent,
+          historyLabel: 'Recovered autosave',
+        });
       } catch (error) {
         console.error(error);
       }
@@ -228,6 +219,42 @@ const App: React.FC = () => {
   const replaceVisibleLayers = (nextLayers: LayerItem[]) => {
     layersRef.current = nextLayers;
     setLayers(nextLayers);
+  };
+
+  const applyProjectState = ({
+    nextLayers,
+    nextCanvasSize,
+    nextBgColor,
+    nextTransparent,
+    historyLabel,
+  }: {
+    nextLayers: LayerItem[];
+    nextCanvasSize: CanvasSize;
+    nextBgColor: string;
+    nextTransparent: boolean;
+    historyLabel: string;
+  }) => {
+    clearPendingPropertyCommit();
+    setCanvasSize(nextCanvasSize);
+    setBgColor(nextBgColor);
+    setIsTransparent(nextTransparent);
+    setSelectedIds([]);
+    setSelectedNestedLayerId(null);
+    setTool('select');
+    setActivePanel('layers');
+    setEditingTextLayerId(null);
+    setTextEditorDraft('');
+    setDraftLine(null);
+    setDraftStroke(null);
+    setIsDrawing(false);
+    setViewTransform(DEFAULT_VIEW_TRANSFORM);
+    setHistory([nextLayers]);
+    historyRef.current = [nextLayers];
+    setHistoryLabels([historyLabel]);
+    historyLabelsRef.current = [historyLabel];
+    setHistoryStep(0);
+    historyStepRef.current = 0;
+    replaceVisibleLayers(nextLayers);
   };
 
   const commitLayers = (nextLayers: LayerItem[], label = 'Edit') => {
@@ -602,23 +629,104 @@ const App: React.FC = () => {
     }
 
     if (
-      selectedIds.length !== 1 ||
       tool !== 'select' ||
       activeEditingTextLayerId !== null ||
-      !selectedLayer?.visible ||
-      selectedLayer.locked ||
-      selectedLayer.type === 'drawing' ||
-      selectedLayer.type === 'group'
+      selectedIds.length === 0
     ) {
       transformer.nodes([]);
       transformer.getLayer()?.batchDraw();
       return;
     }
 
-    const node = selectedId ? stage.findOne(`#${selectedId}`) : null;
-    transformer.nodes(node ? [node] : []);
+    const transformableIds = selectedIds.filter((id) => {
+      const layer = layers.find((item) => item.id === id);
+      return Boolean(layer?.visible && !layer.locked && layer.type !== 'group');
+    });
+    const nodes = transformableIds
+      .map((id) => stage.findOne(`#${id}`))
+      .filter((node): node is Konva.Node => Boolean(node));
+
+    transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [activeEditingTextLayerId, layers, selectedId, selectedIds.length, selectedLayer, tool]);
+  }, [activeEditingTextLayerId, layers, selectedIds, tool]);
+
+  const applyNodeTransformToLayer = (layer: LayerItem, node: Konva.Node): LayerItem => {
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    const absScaleX = Math.abs(scaleX);
+    const absScaleY = Math.abs(scaleY);
+
+    node.scaleX(1);
+    node.scaleY(1);
+
+    switch (layer.type) {
+      case 'rect':
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          width: Math.max(5, node.width() * absScaleX),
+          height: Math.max(5, node.height() * absScaleY),
+        };
+      case 'image':
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          width: Math.max(5, node.width() * absScaleX),
+          height: Math.max(5, node.height() * absScaleY),
+          flipX: scaleX < 0 ? !layer.flipX : layer.flipX,
+          flipY: scaleY < 0 ? !layer.flipY : layer.flipY,
+        };
+      case 'circle':
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          radius: Math.max(5, (node.width() * absScaleX) / 2),
+        };
+      case 'text':
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          width: Math.max(80, node.width() * absScaleX),
+          fontSize: Math.max(5, layer.fontSize * absScaleY),
+        };
+      case 'line':
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          points: layer.points.map((value, index) => (
+            index % 2 === 0 ? value * scaleX : value * scaleY
+          )),
+        };
+      case 'drawing': {
+        const strokeScale = Math.max((absScaleX + absScaleY) / 2, 0.25);
+        return {
+          ...layer,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+          strokes: layer.strokes.map((stroke) => ({
+            ...stroke,
+            points: stroke.points.map((value, index) => (
+              index % 2 === 0 ? value * scaleX : value * scaleY
+            )),
+            strokeWidth: Math.max(1, stroke.strokeWidth * strokeScale),
+          })),
+        };
+      }
+      default:
+        return layer;
+    }
+  };
 
   const selectTool = (nextTool: ToolType) => {
     setTool(nextTool);
@@ -906,26 +1014,13 @@ const App: React.FC = () => {
       }
 
       const project = await deserializeProject(parsed);
-      clearPendingPropertyCommit();
-      setCanvasSize(project.canvasSize);
-      setBgColor(project.bgColor);
-      setIsTransparent(project.isTransparent);
-      setSelectedIds([]);
-      setSelectedNestedLayerId(null);
-      setTool('select');
-      setActivePanel('layers');
-      setEditingTextLayerId(null);
-      setTextEditorDraft('');
-      setDraftLine(null);
-      setDraftStroke(null);
-      setViewTransform({ scale: 1, position: { x: 0, y: 0 } });
-      setHistory([project.layers]);
-      historyRef.current = [project.layers];
-      setHistoryLabels(['Opened project']);
-      historyLabelsRef.current = ['Opened project'];
-      setHistoryStep(0);
-      historyStepRef.current = 0;
-      replaceVisibleLayers(project.layers);
+      applyProjectState({
+        nextLayers: project.layers,
+        nextCanvasSize: project.canvasSize,
+        nextBgColor: project.bgColor,
+        nextTransparent: project.isTransparent,
+        historyLabel: 'Opened project',
+      });
       window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(parsed));
     } catch (error) {
       console.error(error);
@@ -1306,59 +1401,42 @@ const App: React.FC = () => {
   };
 
   const handleLayerTransformEnd = (layerId: string, node: Konva.Node) => {
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-
-    node.scaleX(1);
-    node.scaleY(1);
+    if (selectedIds.length > 1 && selectedIds.includes(layerId)) {
+      return;
+    }
 
     commitLayers(
-      updateLayerById(layers, layerId, (layer) => {
-        const nextLayer: LayerItem = {
-          ...layer,
-          x: node.x(),
-          y: node.y(),
-          rotation: node.rotation(),
-        };
-        const absScaleX = Math.abs(scaleX);
-        const absScaleY = Math.abs(scaleY);
-
-        if (layer.type === 'rect' || layer.type === 'image') {
-          const resizedLayer = {
-            ...nextLayer,
-            width: Math.max(5, node.width() * absScaleX),
-            height: Math.max(5, node.height() * absScaleY),
-          };
-
-          if (layer.type === 'image') {
-            return {
-              ...resizedLayer,
-              flipX: scaleX < 0 ? !layer.flipX : layer.flipX,
-              flipY: scaleY < 0 ? !layer.flipY : layer.flipY,
-            };
-          }
-
-          return resizedLayer;
-        }
-
-        if (layer.type === 'circle') {
-          return {
-            ...nextLayer,
-            radius: Math.max(5, (node.width() * absScaleX) / 2),
-          };
-        }
-
-        if (layer.type === 'text') {
-          return {
-            ...nextLayer,
-            fontSize: Math.max(5, layer.fontSize * absScaleY),
-          };
-        }
-
-        return nextLayer;
-      }),
+      updateLayerById(layers, layerId, (layer) => applyNodeTransformToLayer(layer, node)),
       'Transform layer',
     );
+  };
+
+  const handleSelectionTransformEnd = () => {
+    const stage = stageRef.current;
+    if (!stage || selectedIds.length < 2) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const nodeMap = new Map<string, Konva.Node>();
+      selectedIds.forEach((id) => {
+        const node = stage.findOne(`#${id}`);
+        if (node) {
+          nodeMap.set(id, node);
+        }
+      });
+
+      commitLayers(
+        layersRef.current.map((layer) => {
+          const node = nodeMap.get(layer.id);
+          if (!node) {
+            return layer;
+          }
+          return applyNodeTransformToLayer(layer, node);
+        }),
+        'Transform selection',
+      );
+    });
   };
 
   const handleMoveLayer = (layerId: string, direction: 'up' | 'down') => {
@@ -1427,6 +1505,22 @@ const App: React.FC = () => {
       setEditingTextLayerId(null);
       setTextEditorDraft('');
     }
+  };
+
+  const handleResetProject = () => {
+    const shouldReset = window.confirm('Reset the entire project? This will clear all layers and canvas settings.');
+    if (!shouldReset) {
+      return;
+    }
+
+    applyProjectState({
+      nextLayers: [],
+      nextCanvasSize: DEFAULT_CANVAS_SIZE,
+      nextBgColor: DEFAULT_BG_COLOR,
+      nextTransparent: false,
+      historyLabel: 'Reset project',
+    });
+    window.localStorage.removeItem(AUTOSAVE_KEY);
   };
 
   return (
@@ -1498,17 +1592,25 @@ const App: React.FC = () => {
               >
                 <Save className="w-4 h-4" />
               </button>
+              <button
+                onClick={handleResetProject}
+                aria-label="Reset project"
+                className="flex h-7 w-7 items-center justify-center rounded text-red-100 hover:bg-red-500/20"
+                title="Reset project"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="flex h-9 items-center gap-1 bg-gray-900 px-2 rounded-md border border-gray-700">
-              <span className="text-xs text-gray-400">W:</span>
+              <span className="text-xs text-gray-400">W</span>
               <input
                 type="number"
                 value={canvasSize.width}
                 onChange={(event) => setCanvasSize({ ...canvasSize, width: Number(event.target.value) })}
                 className="h-7 w-12 bg-transparent text-xs outline-none text-center"
               />
-              <span className="text-xs text-gray-400 border-l border-gray-700 pl-2">H:</span>
+              <span className="text-xs text-gray-400 border-l border-gray-700 pl-2">H</span>
               <input
                 type="number"
                 value={canvasSize.height}
@@ -1525,14 +1627,14 @@ const App: React.FC = () => {
                   className={`h-5 px-2 text-xs rounded transition-colors ${isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
                   title="Transparent background"
                 >
-                  Transparent
+                  None
                 </button>
                 <button
                   onClick={() => setIsTransparent(false)}
                   className={`h-5 px-2 text-xs rounded transition-colors ${!isTransparent ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
                   title="Solid background"
                 >
-                  Solid
+                  Color
                 </button>
               </div>
               {!isTransparent && (
@@ -1601,26 +1703,6 @@ const App: React.FC = () => {
               Shortcuts
             </button>
 
-            {(tool === 'brush' || tool === 'line') && (
-              <div className="flex h-9 items-center gap-3 ml-4">
-                <div className="h-6 w-[1px] bg-gray-600"></div>
-                <span className="text-xs text-gray-400">{tool === 'brush' ? 'Brush:' : 'Line:'}</span>
-                <input
-                  type="color"
-                  value={drawingColor}
-                  onChange={(event) => setDrawingColor(event.target.value)}
-                  className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
-                />
-                <input
-                  type="range"
-                  min="1"
-                  max="50"
-                  value={drawingSize}
-                  onChange={(event) => setDrawingSize(Number(event.target.value))}
-                  className="w-20 accent-blue-500"
-                />
-              </div>
-            )}
         </div>
 
         {showShortcutHelp && (
@@ -1732,8 +1814,10 @@ const App: React.FC = () => {
           onViewTransformChange={setViewTransform}
           onSelectLayer={selectLayer}
           onSelectLayers={selectLayers}
+          selectedIds={selectedIds}
           onLayerDragEnd={handleLayerDragEnd}
           onLayerTransformEnd={handleLayerTransformEnd}
+          onSelectionTransformEnd={handleSelectionTransformEnd}
           editingTextLayerId={activeEditingTextLayerId}
           onStartTextEdit={startTextEditing}
           onCommitTextEdit={commitTextEditing}
@@ -1743,28 +1827,62 @@ const App: React.FC = () => {
         />
 
         <div className="h-14 bg-gray-800 border-t border-gray-700 flex items-center px-4 gap-3 justify-between z-20">
-          <div className="flex h-9 items-center rounded-md border border-gray-700 bg-gray-900 px-3">
-            {selectedLayerSummary ? (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="rounded bg-blue-500/15 px-2 py-1 font-semibold text-blue-200">
-                  {selectedLayerSummary.type}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 items-center rounded-md border border-gray-700 bg-gray-900 px-3">
+              {selectedLayerSummary ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-blue-200">
+                    {selectedLayerSummary.type}
+                  </span>
+                  <span className="max-w-40 truncate text-gray-200">{selectedLayerSummary.name}</span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-400">{selectedLayerSummary.detail}</span>
+                  {selectedLayerSummary.context && (
+                    <>
+                      <span className="text-gray-500">•</span>
+                      <span className="text-cyan-300">{selectedLayerSummary.context}</span>
+                    </>
+                  )}
+                  {selectedIds.length === 1 && selectedLayer?.locked && <span className="text-amber-300">Locked</span>}
+                  {selectedIds.length === 1 && selectedLayer && !selectedLayer.visible && <span className="text-rose-300">Hidden</span>}
+                </div>
+              ) : (
+                <span className="text-xs text-gray-400">
+                  No selection
                 </span>
-                <span className="max-w-40 truncate text-gray-200">{selectedLayerSummary.name}</span>
-                <span className="text-gray-500">•</span>
-                <span className="text-gray-400">{selectedLayerSummary.detail}</span>
-                {selectedLayerSummary.context && (
-                  <>
-                    <span className="text-gray-500">•</span>
-                    <span className="text-cyan-300">{selectedLayerSummary.context}</span>
-                  </>
-                )}
-                {selectedIds.length === 1 && selectedLayer?.locked && <span className="text-amber-300">Locked</span>}
-                {selectedIds.length === 1 && selectedLayer && !selectedLayer.visible && <span className="text-rose-300">Hidden</span>}
+              )}
+            </div>
+            {(tool === 'brush' || tool === 'line') && (
+              <div className="flex h-9 items-center gap-1.5 rounded-md border border-gray-700 bg-gray-900 pl-3 pr-2">
+                <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-blue-200">
+                  {tool === 'brush' ? 'BRUSH' : 'LINE'}
+                </span>
+                <div className="relative flex items-center justify-center group">
+                  <div
+                    className="h-5 w-5 rounded-full border border-gray-600 shadow-sm transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: drawingColor }}
+                  />
+                  <input
+                    type="color"
+                    value={drawingColor}
+                    onChange={(event) => setDrawingColor(event.target.value)}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    title={`Change ${tool === 'brush' ? 'brush' : 'line'} color`}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  value={drawingSize}
+                  onChange={(event) => setDrawingSize(Number(event.target.value))}
+                  className="w-20 accent-blue-500"
+                  title={`${tool === 'brush' ? 'Brush' : 'Line'} size`}
+                />
+                <span className="min-w-[1.5rem] text-center text-[11px] font-medium tabular-nums text-gray-400">
+                  {drawingSize}
+                </span>
               </div>
-            ) : (
-              <span className="text-xs text-gray-400">
-                No selection
-              </span>
             )}
           </div>
 
