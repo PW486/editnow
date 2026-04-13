@@ -511,8 +511,8 @@ const EditorCanvas = ({
   const boardHeight = canvasSize.height + RULER_SIZE;
   const workspaceWidth = Math.max(workspaceSize.width, boardWidth + 96);
   const workspaceHeight = Math.max(workspaceSize.height, boardHeight + 96);
-  const boardLeft = Math.max(RULER_SIZE, Math.round((workspaceWidth - boardWidth) / 2));
-  const boardTop = Math.max(RULER_SIZE, Math.round((workspaceHeight - boardHeight) / 2));
+  const boardLeft = Math.max(0, Math.round((workspaceWidth - canvasSize.width) / 2) - RULER_SIZE);
+  const boardTop = Math.max(0, Math.round((workspaceHeight - canvasSize.height) / 2) - RULER_SIZE);
   const canvasOrigin = { x: boardLeft + RULER_SIZE, y: boardTop + RULER_SIZE };
 
   const rulerStep = useMemo(() => {

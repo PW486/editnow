@@ -33,6 +33,7 @@ import type { ActivePanel, CanvasSize, DrawingStroke, LayerItem, LineLayer, Poin
 const AUTOSAVE_KEY = 'editnow-autosave-v1';
 const DEFAULT_CANVAS_SIZE: CanvasSize = { width: 800, height: 600 };
 const DEFAULT_BG_COLOR = '#ffffff';
+const RULER_SIZE = 24;
 const DEFAULT_VIEW_TRANSFORM: ViewTransform = {
   scale: 1,
   position: { x: 0, y: 0 },
@@ -1055,20 +1056,19 @@ const App: React.FC = () => {
       return null;
     }
 
-    const rulerSize = 24;
-    const boardWidth = canvasSize.width + rulerSize;
-    const boardHeight = canvasSize.height + rulerSize;
+    const boardWidth = canvasSize.width + RULER_SIZE;
+    const boardHeight = canvasSize.height + RULER_SIZE;
     const workspaceWidth = Math.max(workspaceElement.clientWidth, boardWidth + 96);
     const workspaceHeight = Math.max(workspaceElement.clientHeight, boardHeight + 96);
-    const boardLeft = Math.max(rulerSize, Math.round((workspaceWidth - boardWidth) / 2));
-    const boardTop = Math.max(rulerSize, Math.round((workspaceHeight - boardHeight) / 2));
+    const boardLeft = Math.max(0, Math.round((workspaceWidth - canvasSize.width) / 2) - RULER_SIZE);
+    const boardTop = Math.max(0, Math.round((workspaceHeight - canvasSize.height) / 2) - RULER_SIZE);
 
     return {
       viewportWidth: workspaceElement.clientWidth,
       viewportHeight: workspaceElement.clientHeight,
       canvasOrigin: {
-        x: boardLeft + rulerSize,
-        y: boardTop + rulerSize,
+        x: boardLeft + RULER_SIZE,
+        y: boardTop + RULER_SIZE,
       },
     };
   };
